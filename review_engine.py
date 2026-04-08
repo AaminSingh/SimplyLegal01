@@ -1,15 +1,22 @@
 import os
 import fitz
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+SYSTEM_PROMPT = (
+    "You are an expert legal document reviewer. "
+    "Your role is to analyze contracts and provide concise, actionable feedback. "
+    "Focus on: unclear or inconsistent terms, missing standard clauses, ambiguous language, "
+    "and concrete suggestions for improvement. Be direct and specific. "
+    "Do not rewrite the entire document — provide a structured review only."
+)
 
 
 def extract_text_from_pdf(pdf_path):
@@ -22,23 +29,20 @@ def extract_text_from_pdf(pdf_path):
 
 
 def build_review_prompt(contract_text):
-    return f"""
-Please review the following legal contract and provide a concise analysis.
-
-Review requirements:
-- Identify any unclear or inconsistent terms.
-- Highlight missing sections or clauses.
-- Suggest any improvements for clarity and readability.
-- Do not rewrite the entire document; provide a short review.
-
-Contract text:
-{contract_text}
-"""
+    return (
+        "Please review the following legal contract and provide a structured analysis.\n\n"
+        "Your review should cover:\n"
+        "1. Unclear or inconsistent terms\n"
+        "2. Missing sections or standard clauses\n"
+        "3. Ambiguous language that could cause disputes\n"
+        "4. Specific suggestions to improve clarity and enforceability\n\n"
+        f"Contract text:\n{contract_text}"
+    )
 
 
 def review_contract(file_path):
-    if not GEMINI_API_KEY:
-        raise RuntimeError("Missing GEMINI_API_KEY environment variable. Add it to .env or your environment.")
+    if not client:
+        raise RuntimeError("Missing GROQ_API_KEY. Add it to your .env file.")
 
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Review file not found: {file_path}")
@@ -53,10 +57,18 @@ def review_contract(file_path):
         raise ValueError("Uploaded file contains no readable text.")
 
     prompt = build_review_prompt(contract_text)
-    model = genai.GenerativeModel(GEMINI_MODEL)
-    response = model.generate_content(prompt)
-    review_text = getattr(response, "text", None)
 
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=2048,
+    )
+
+    review_text = response.choices[0].message.content
     if not review_text:
         raise RuntimeError("AI did not return a review.")
 

@@ -1,105 +1,157 @@
 # SimplyLegal
 
-AI-Powered Legal Document Automation Platform
+AI-Powered Legal Document Automation Platform — draft, review, and manage contracts in minutes using Groq's Llama AI.
 
-## Project Overview
+---
 
-This FastAPI backend generates contract text and converts it to PDF.
-It currently supports:
-- generating a contract document from the request data
-- writing the document to a PDF file
-- returning the PDF file as a response
+## Stack
 
-## Backend Structure
+| Layer    | Technology                          |
+|----------|-------------------------------------|
+| Frontend | Next.js 14, React 18, Tailwind CSS  |
+| Backend  | FastAPI (Python)                    |
+| AI       | Groq API — `llama-3.1-8b-instant`   |
+| PDF      | fpdf2, PyMuPDF                      |
 
-- `main.py` - FastAPI app and `/generate-pdf` endpoint
-- `legal_engine.py` - contract generation logic using Gemini AI
-- `pdf_engine.py` - text-to-PDF converter
-- `.gitignore` - ignores environment, venv, generated files
-- `requirements.txt` - Python dependencies
+---
 
-## Frontend Teammate Notes
+## Project Structure
 
-### What you need to build
-
-A simple UI that:
-1. accepts contract input fields from the user
-   - `contract_type`
-   - `party_name`
-   - `state`
-2. sends a POST request to `/generate-pdf`
-3. downloads or opens the returned PDF file
-
-### Suggested API request
-
-POST `http://127.0.0.1:8000/generate-pdf`
-
-Header:
-```http
-Content-Type: application/json
+```
+SimplyLegal/
+├── app/                  # Next.js app router
+│   ├── page.tsx          # Root page
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Global styles
+├── components/
+│   ├── Dashboard.tsx     # Main dashboard with document list
+│   ├── DocumentViewer.tsx# Document viewer + AI review panel
+│   ├── IntakeWizard.tsx  # 4-step contract creation wizard
+│   └── Sidebar.tsx       # Navigation sidebar
+├── main.py               # FastAPI app + API endpoints
+├── legal_engine.py       # Contract generation via Groq
+├── review_engine.py      # Document review via Groq
+├── pdf_engine.py         # Text-to-PDF converter
+├── requirements.txt      # Python dependencies
+├── package.json          # Node dependencies
+└── next.config.js        # Next.js config (proxies /backend/* → FastAPI)
 ```
 
-Body:
+---
+
+## Setup
+
+### 1. Clone and install dependencies
+
+```bash
+# Frontend
+npm install
+
+# Backend
+pip install -r requirements.txt
+```
+
+### 2. Configure environment
+
+Create a `.env` file in the project root (copy from `.env.example`):
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and add your Groq API key:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+Get a free API key at [console.groq.com](https://console.groq.com).
+
+---
+
+## Running the App
+
+You need **two terminals** — one for the backend, one for the frontend.
+
+### Terminal 1 — Backend (FastAPI)
+
+```bash
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The API will be available at `http://localhost:8000`.
+
+### Terminal 2 — Frontend (Next.js)
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+> The frontend proxies all `/backend/*` requests to `http://localhost:8000` automatically via `next.config.js`, so no additional config is needed.
+
+---
+
+## Features
+
+### Create a Contract
+1. Click **Create New Document** on the dashboard
+2. Select a document type (NDA, Service Agreement, Lease)
+3. Fill in party names and jurisdiction
+4. Add agreement details and purpose
+5. Click **Generate Contract** — the AI drafts the contract and downloads it as a PDF
+
+### Review a Document
+1. Open the **Document Viewer** (click any document row)
+2. Click **Review Doc** in the toolbar
+3. Upload a PDF or TXT file
+4. The AI analyzes the contract and shows feedback in the right panel
+
+### Clause Explainer
+In the Document Viewer, click any clause in the left pane to get an instant plain-English explanation in the AI panel on the right.
+
+---
+
+## API Endpoints
+
+### `POST /generate-pdf`
+
+Generates a contract and returns it as a PDF file.
+
+**Request body:**
 ```json
 {
-  "contract_type": "NDA",
-  "party_name": "Acme Corp",
-  "state": "California"
+  "contract_type": "Non-Disclosure Agreement",
+  "party_name": "Acme Corp and Globex Inc",
+  "state": "California",
+  "agreement_type": "mutual",
+  "purpose": "Protecting source code shared during a software evaluation"
 }
 ```
 
-### Response
+**Response:** `application/pdf` file download
 
-- returns a PDF file
-- frontend should handle the file download
+---
 
-### Recommended frontend approach
+### `POST /review`
 
-- plain HTML/CSS/JavaScript is fine for MVP
-- use `fetch()` to POST JSON
-- use `Blob` and `URL.createObjectURL()` to download the PDF
+Reviews an uploaded contract document.
 
-Example fetch flow:
-```js
-fetch('http://127.0.0.1:8000/generate-pdf', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ contract_type, party_name, state })
-})
-.then(res => res.blob())
-.then(blob => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'contract.pdf';
-  a.click();
-});
+**Request:** `multipart/form-data` with a `file` field (PDF or TXT)
+
+**Response:**
+```json
+{
+  "analysis": "AI-generated review text..."
+}
 ```
 
-## Environment
+---
 
-Create a `.env` file in the project root with:
+## Notes
 
-```env
-GEMINI_API_KEY=your_google_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-If `GEMINI_MODEL` is not set, the backend defaults to `gemini-2.5-flash`.
-
-## Run the backend locally
-
-1. Activate the virtual environment:
-   - `& "./venv/Scripts/Activate.ps1"`
-2. Install requirements:
-   - `pip install -r requirements.txt`
-3. Start the app:
-   - `uvicorn main:app --reload --host 127.0.0.1 --port 8000`
-
-## Notes for frontend work
-
-- The backend now uses real AI generation for contracts through Gemini.
-- The frontend should send JSON and receive a PDF from `/generate-pdf`.
-- Make sure the `.env` file is created locally and not committed.
-- A simple sample UI is available at `http://127.0.0.1:8000/`.
-- The page uses JavaScript to submit contract details and download the returned PDF.
+- Generated PDF files are saved temporarily in the project root and served immediately.
+- The `.env` file must never be committed — it is listed in `.gitignore`.
+- Always consult a licensed attorney before using AI-generated contracts in legal contexts.

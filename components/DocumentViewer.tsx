@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Download,
@@ -16,6 +16,9 @@ import {
   CheckCheck,
   Clock,
   Shield,
+  Upload,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -308,6 +311,93 @@ function AIPanel({
   );
 }
 
+// ─── Review Panel ───────────────────────────────────────────────────────────────
+
+function ReviewPanel({
+  loading,
+  result,
+  error,
+  onClear,
+}: {
+  loading: boolean;
+  result: string | null;
+  error: string | null;
+  onClear: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 px-6">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+        <p className="text-sm font-semibold text-slate-300">Analyzing document…</p>
+        <p className="text-xs text-slate-500 text-center">
+          The AI is reviewing your contract for issues and improvements.
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 px-6">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+        <p className="text-sm font-bold text-red-400">Review Failed</p>
+        <p className="text-xs text-slate-400 text-center leading-relaxed">{error}</p>
+        <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors">
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (result) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider leading-none mb-0.5">
+                AI Review
+              </p>
+              <p className="text-[11px] text-slate-600">Contract Analysis</p>
+            </div>
+          </div>
+          <button
+            onClick={onClear}
+            className="text-[11px] text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            Clear ✕
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
+          {result.split("\n").map((line, i) => (
+            <p
+              key={i}
+              className={`text-sm leading-relaxed mb-2 last:mb-0 ${
+                line.startsWith("#") || /^\d+\./.test(line)
+                  ? "font-semibold text-slate-100"
+                  : "text-slate-300"
+              }`}
+            >
+              {line || <br />}
+            </p>
+          ))}
+        </div>
+        <div className="flex items-start gap-2.5 bg-amber-500/8 border border-amber-500/20 rounded-xl p-3.5 mt-4">
+          <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-300/80 leading-relaxed">
+            <span className="font-semibold text-amber-300">Legal note:</span> This AI analysis is for informational purposes only. Always consult a licensed attorney for binding legal advice.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // ─── Document Viewer ────────────────────────────────────────────────────────────
 
 interface DocumentViewerProps {
@@ -317,12 +407,52 @@ interface DocumentViewerProps {
 export default function DocumentViewer({ onBack }: DocumentViewerProps) {
   const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null);
   const [shareToast, setShareToast] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewResult, setReviewResult] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeParagraph = paragraphs.find((p) => p.id === activeParagraphId) ?? null;
+  const isReviewMode = reviewLoading || !!reviewResult || !!reviewError;
 
   const handleShare = () => {
     setShareToast(true);
     setTimeout(() => setShareToast(false), 2500);
+  };
+
+  const handleReviewUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input so same file can be re-selected
+    e.target.value = "";
+
+    setReviewLoading(true);
+    setReviewResult(null);
+    setReviewError(null);
+    setActiveParagraphId(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/backend/review", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({ detail: `Server error ${response.status}` }));
+        throw new Error(errBody.detail ?? `Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      setReviewResult(data.analysis);
+    } catch (err: unknown) {
+      setReviewError(err instanceof Error ? err.message : "Review failed. Is the backend running?");
+    } finally {
+      setReviewLoading(false);
+    }
   };
 
   return (
@@ -364,6 +494,23 @@ export default function DocumentViewer({ onBack }: DocumentViewerProps) {
 
         {/* Right: action buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Hidden file input for review upload */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt"
+            className="hidden"
+            onChange={handleReviewUpload}
+          />
+          <button
+            id="btn-review-upload"
+            onClick={() => fileInputRef.current?.click()}
+            className="btn-ghost text-xs px-3 py-2"
+            aria-label="Upload document for AI review"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Review Doc
+          </button>
           <button
             id="btn-download-pdf"
             className="btn-ghost text-xs px-3 py-2"
@@ -523,12 +670,12 @@ export default function DocumentViewer({ onBack }: DocumentViewerProps) {
             {/* Right pane header */}
             <div className="flex items-center justify-between mb-5 shrink-0">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                <div className={`w-2 h-2 rounded-full animate-pulse ${isReviewMode ? "bg-amber-500" : "bg-indigo-500"}`} />
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  AI Assistant
+                  {isReviewMode ? "AI Review" : "AI Assistant"}
                 </span>
               </div>
-              {activeParagraph && (
+              {!isReviewMode && activeParagraph && (
                 <button
                   id="btn-clear-analysis"
                   onClick={() => setActiveParagraphId(null)}
@@ -541,10 +688,22 @@ export default function DocumentViewer({ onBack }: DocumentViewerProps) {
 
             {/* Scrollable AI panel content */}
             <div className="flex-1 overflow-y-auto">
-              <AIPanel
-                paragraph={activeParagraph}
-                onDismiss={() => setActiveParagraphId(null)}
-              />
+              {isReviewMode ? (
+                <ReviewPanel
+                  loading={reviewLoading}
+                  result={reviewResult}
+                  error={reviewError}
+                  onClear={() => {
+                    setReviewResult(null);
+                    setReviewError(null);
+                  }}
+                />
+              ) : (
+                <AIPanel
+                  paragraph={activeParagraph}
+                  onDismiss={() => setActiveParagraphId(null)}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -82,6 +82,12 @@ const GENERATION_PHASES = [
   "Finalizing document...",
 ];
 
+const DOC_TYPE_LABELS: Record<string, string> = {
+  nda: "Non-Disclosure Agreement",
+  service: "Service Agreement",
+  lease: "Lease Agreement",
+};
+
 const colorMap: Record<string, { border: string; bg: string; icon: string; shadow: string }> = {
   indigo: {
     border: "border-indigo-500",
@@ -389,31 +395,70 @@ function SummaryRow({ icon: Icon, label, value }: { icon: React.ElementType; lab
 }
 
 function StepGenerate({ data, onGenerate }: { data: WizardData; onGenerate: () => void }) {
-  const [phase, setPhase] = useState<"idle" | "loading" | "done">("idle");
+  const [phase, setPhase] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [phaseIdx, setPhaseIdx] = useState(0);
   const [phaseText, setPhaseText] = useState(GENERATION_PHASES[0]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const selectedDoc = DOCUMENT_TYPES.find((d) => d.id === data.documentType);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setPhase("loading");
     setPhaseIdx(0);
     setPhaseText(GENERATION_PHASES[0]);
+    setErrorMsg(null);
 
+    // Animate through phases while waiting for the API
     let idx = 0;
     const interval = setInterval(() => {
       idx++;
-      if (idx < GENERATION_PHASES.length) {
+      if (idx < GENERATION_PHASES.length - 1) {
         setPhaseIdx(idx);
         setPhaseText(GENERATION_PHASES[idx]);
-      } else {
-        clearInterval(interval);
-        setTimeout(() => {
-          setPhase("done");
-          onGenerate();
-        }, 600);
       }
-    }, 1100);
+    }, 1400);
+
+    try {
+      const response = await fetch("/backend/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_type: DOC_TYPE_LABELS[data.documentType] ?? data.documentType,
+          party_name: `${data.yourName} and ${data.counterpartyName}`,
+          state: data.jurisdiction,
+          agreement_type: data.agreementType || undefined,
+          purpose: data.purpose || undefined,
+        }),
+      });
+
+      clearInterval(interval);
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({ detail: `Server error ${response.status}` }));
+        throw new Error(errBody.detail ?? `Request failed with status ${response.status}`);
+      }
+
+      // Trigger PDF download
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const docLabel = DOC_TYPE_LABELS[data.documentType] ?? "Contract";
+      anchor.href = url;
+      anchor.download = `${docLabel.replace(/\s+/g, "_")}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+
+      setPhaseIdx(GENERATION_PHASES.length - 1);
+      setPhaseText(GENERATION_PHASES[GENERATION_PHASES.length - 1]);
+      setTimeout(() => {
+        setPhase("done");
+        onGenerate();
+      }, 600);
+    } catch (err: unknown) {
+      clearInterval(interval);
+      setErrorMsg(err instanceof Error ? err.message : "Failed to generate contract. Is the backend running?");
+      setPhase("error");
+    }
   };
 
   return (
@@ -517,7 +562,25 @@ function StepGenerate({ data, onGenerate }: { data: WizardData; onGenerate: () =
               <Check className="w-5 h-5 text-white" />
             </motion.div>
             <p className="text-sm font-bold text-emerald-400">Document Ready!</p>
-            <p className="text-xs text-slate-500">Your contract has been drafted and saved to Documents.</p>
+            <p className="text-xs text-slate-500">Your PDF has been downloaded.</p>
+          </motion.div>
+        )}
+
+        {phase === "error" && (
+          <motion.div
+            key="error-state"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full flex flex-col items-center gap-3 py-4 px-4 rounded-xl bg-red-500/10 border border-red-500/30"
+          >
+            <p className="text-sm font-bold text-red-400">Generation Failed</p>
+            <p className="text-xs text-slate-400 text-center leading-relaxed">{errorMsg}</p>
+            <button
+              onClick={() => setPhase("idle")}
+              className="text-xs font-semibold text-slate-400 hover:text-slate-200 underline transition-colors"
+            >
+              Try again
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

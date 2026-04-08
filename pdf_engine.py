@@ -1,30 +1,77 @@
 from fpdf import FPDF
-import uuid # For unique filenames
+import unicodedata
+import uuid
 import os
 
-def text_to_pdf(text, party_name):
-    try:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=12)
-        
-        # Clean text for PDF compatibility
-        clean_text = str(text).encode('latin-1', 'replace').decode('latin-1')
-        
-        for line in clean_text.split('\n'):
-            safe_line = line.replace('**', '').replace('#', '').replace('*', '').strip()
-            if safe_line:
-                pdf.multi_cell(180, 10, txt=safe_line)
-        
-        # Create a unique filename so it never conflicts
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"contract_{party_name}_{unique_id}.pdf".replace(" ", "_")
-        
-        # Save to the current directory
-        pdf.output(filename)
-        
-        # Absolute path verification
-        return os.path.abspath(filename)
-    except Exception as e:
-        print(f"PDF Logic Error: {e}")
-        return None
+
+def _sanitize(text: str) -> str:
+    """Replace common unicode / smart-punctuation chars with ASCII equivalents."""
+    text = unicodedata.normalize("NFKD", text)
+    replacements = {
+        "\u2018": "'",  "\u2019": "'",   # curly single quotes
+        "\u201c": '"',  "\u201d": '"',   # curly double quotes
+        "\u2013": "-",  "\u2014": "--",  # en-dash / em-dash
+        "\u2022": "-",                    # bullet point
+        "\u2026": "...",                  # ellipsis
+        "\u00a0": " ",                    # non-breaking space
+        "\u00b0": "deg",
+        "\u00a9": "(c)",
+        "\u00ae": "(R)",
+    }
+    for char, repl in replacements.items():
+        text = text.replace(char, repl)
+    return text.encode("latin-1", "ignore").decode("latin-1")
+
+
+def text_to_pdf(text: str, party_name: str) -> str:
+    """Convert contract text to a PDF file. Raises on failure."""
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Calculate effective content width AFTER add_page (avoids fpdf2 2.8 w=0 bug)
+    eff_w = pdf.w - pdf.l_margin - pdf.r_margin
+
+    safe_text = _sanitize(str(text))
+
+    for raw_line in safe_text.split("\n"):
+        # Strip markdown artifacts
+        line = (
+            raw_line
+            .replace("**", "")
+            .replace("__", "")
+            .replace("*", "")
+            .lstrip("# ")
+            .strip()
+        )
+
+        if not line:
+            pdf.ln(3)
+            continue
+
+        # Heading detection: ALL CAPS short line, or starts with a digit+period
+        is_heading = (
+            (line.isupper() and len(line) < 100)
+            or (len(line) < 120 and line[:3].rstrip(". ").isdigit())
+        )
+
+        if is_heading:
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.ln(2)
+        else:
+            pdf.set_font("Helvetica", "", 11)
+
+        pdf.multi_cell(eff_w, 6, line)
+
+    # Build a safe filename
+    safe_name = "".join(
+        c if c.isalnum() or c in "-_" else "_" for c in party_name
+    )[:30]
+    filename = f"contract_{safe_name}_{uuid.uuid4().hex[:8]}.pdf"
+
+    pdf_bytes = pdf.output()
+    with open(filename, "wb") as f:
+        f.write(pdf_bytes)
+
+    return os.path.abspath(filename)
