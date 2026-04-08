@@ -13,7 +13,7 @@ It currently supports:
 ## Backend Structure
 
 - `main.py` - FastAPI app and `/generate-pdf` endpoint
-- `legal_engine.py` - contract generation logic (currently mocked)
+- `legal_engine.py` - contract generation logic using Gemini AI
 - `pdf_engine.py` - text-to-PDF converter
 - `.gitignore` - ignores environment, venv, generated files
 - `requirements.txt` - Python dependencies
@@ -76,6 +76,17 @@ fetch('http://127.0.0.1:8000/generate-pdf', {
 });
 ```
 
+## Environment
+
+Create a `.env` file in the project root with:
+
+```env
+GEMINI_API_KEY=your_google_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+If `GEMINI_MODEL` is not set, the backend defaults to `gemini-2.5-flash`.
+
 ## Run the backend locally
 
 1. Activate the virtual environment:
@@ -87,6 +98,8 @@ fetch('http://127.0.0.1:8000/generate-pdf', {
 
 ## Notes for frontend work
 
-- The current backend is ready for a frontend to send JSON and receive PDFs.
-- The AI generation is mocked, so any text output is placeholder until `legal_engine.py` is updated.
-- If you want to support file uploads or more fields, we can extend `/generate-pdf` next.
+- The backend now uses real AI generation for contracts through Gemini.
+- The frontend should send JSON and receive a PDF from `/generate-pdf`.
+- Make sure the `.env` file is created locally and not committed.
+- A simple sample UI is available at `http://127.0.0.1:8000/`.
+- The page uses JavaScript to submit contract details and download the returned PDF.
