@@ -1,5 +1,7 @@
 # SimplyLegal
 link:simply-legal01.vercel.app
+
+
 AI-Powered Legal Document Automation Platform — draft, review, and manage contracts in minutes using Groq's Llama AI.
 
 ---
