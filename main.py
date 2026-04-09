@@ -35,6 +35,7 @@ class ContractRequest(BaseModel):
     state: str
     agreement_type: Optional[str] = None
     purpose: Optional[str] = None
+    signature_base64: Optional[str] = None
 
 
 @app.post("/generate-pdf")
@@ -48,7 +49,7 @@ async def create_pdf_contract(request: ContractRequest):
             request.purpose,
         )
 
-        full_file_path = text_to_pdf(raw_text, request.party_name)
+        full_file_path = text_to_pdf(raw_text, request.party_name, request.signature_base64)
         if not os.path.exists(full_file_path):
             raise HTTPException(status_code=500, detail="PDF file not found after generation")
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -27,6 +27,7 @@ interface WizardData {
   jurisdiction: string;
   agreementType: string;
   purpose: string;
+  signatureBase64?: string;
 }
 
 interface IntakeWizardProps {
@@ -400,6 +401,57 @@ function StepGenerate({ data, onGenerate }: { data: WizardData; onGenerate: () =
   const [phaseText, setPhaseText] = useState(GENERATION_PHASES[0]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    setIsDrawing(true);
+    setHasDrawn(true);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ("clientX" in e.nativeEvent) ? e.nativeEvent.clientX - rect.left : e.nativeEvent.touches[0].clientX - rect.left;
+    const y = ("clientY" in e.nativeEvent) ? e.nativeEvent.clientY - rect.top : e.nativeEvent.touches[0].clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ("clientX" in e.nativeEvent) ? e.nativeEvent.clientX - rect.left : e.nativeEvent.touches[0].clientX - rect.left;
+    const y = ("clientY" in e.nativeEvent) ? e.nativeEvent.clientY - rect.top : e.nativeEvent.touches[0].clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = "#4f46e5";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  };
+
   const selectedDoc = DOCUMENT_TYPES.find((d) => d.id === data.documentType);
 
   const handleGenerate = async () => {
@@ -428,6 +480,7 @@ function StepGenerate({ data, onGenerate }: { data: WizardData; onGenerate: () =
           state: data.jurisdiction,
           agreement_type: data.agreementType || undefined,
           purpose: data.purpose || undefined,
+          signature_base64: hasDrawn && canvasRef.current ? canvasRef.current.toDataURL("image/png") : undefined,
         }),
       });
 
@@ -481,6 +534,47 @@ function StepGenerate({ data, onGenerate }: { data: WizardData; onGenerate: () =
         />
         <SummaryRow icon={MessageSquare} label="Purpose" value={data.purpose} />
       </div>
+
+      {/* Signature Area */}
+      {phase === "idle" && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-semibold text-slate-300">
+              E-Signature
+            </label>
+            {hasDrawn && (
+              <button
+                type="button"
+                onClick={clearSignature}
+                className="text-xs text-slate-500 hover:text-red-400 transition-colors"
+              >
+                Clear Signature
+              </button>
+            )}
+          </div>
+          <div className="relative border border-slate-700/60 rounded-xl bg-slate-800/60 overflow-hidden touch-none h-32">
+            <canvas
+              ref={canvasRef}
+              width={400}
+              height={128}
+              className="w-full h-full cursor-crosshair bg-white/5"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+              onTouchCancel={stopDrawing}
+            />
+            {!hasDrawn && (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <span className="text-slate-600 text-sm italic">Draw your signature here...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Generate Button / Loading / Done */}
       <AnimatePresence mode="wait">

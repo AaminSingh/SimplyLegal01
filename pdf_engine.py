@@ -2,6 +2,7 @@ from fpdf import FPDF
 import unicodedata
 import uuid
 import os
+import base64
 
 
 def _sanitize(text: str) -> str:
@@ -23,7 +24,7 @@ def _sanitize(text: str) -> str:
     return text.encode("latin-1", "ignore").decode("latin-1")
 
 
-def text_to_pdf(text: str, party_name: str) -> str:
+def text_to_pdf(text: str, party_name: str, signature_base64: str = None) -> str:
     """Convert contract text to a PDF file. Raises on failure."""
 
     pdf = FPDF()
@@ -63,6 +64,30 @@ def text_to_pdf(text: str, party_name: str) -> str:
             pdf.set_font("Helvetica", "", 11)
 
         pdf.multi_cell(eff_w, 6, line)
+
+    if signature_base64:
+        # Check for data URI prefix and strip it
+        if "," in signature_base64:
+            header, encoded = signature_base64.split(",", 1)
+        else:
+            encoded = signature_base64
+            
+        try:
+            image_data = base64.b64decode(encoded)
+            temp_image_path = f"temp_sig_{uuid.uuid4().hex[:8]}.png"
+            with open(temp_image_path, "wb") as img_file:
+                img_file.write(image_data)
+                
+            pdf.ln(10)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(0, 10, "First Party Signature:", ln=True)
+            
+            pdf.image(temp_image_path, x=15, w=60)
+            pdf.ln(25)
+            
+            os.remove(temp_image_path)
+        except Exception as e:
+            print(f"Error processing signature: {e}")
 
     # Build a safe filename
     safe_name = "".join(
